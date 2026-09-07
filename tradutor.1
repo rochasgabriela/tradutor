@@ -1,0 +1,107 @@
+.\" tradutor.1 — man page do tradutor
+.TH TRADUTOR 1 "2026-09-06" "tradutor 1.0" "Manual do usuário"
+.SH NOME
+tradutor \- tradutor de idiomas para o terminal
+.SH SINOPSE
+.B tradutor
+.RI [ sl:tl ]
+.RI [ texto\ |\ arquivo ]
+.RI [ opções ]
+.br
+.B tradutor
+.RI [ opções ]
+com o texto vindo da entrada padrão (pipe ou redirecionamento)
+.br
+.B tradutor
+sem argumentos: ajuda rápida
+.SH DESCRIÇÃO
+.B tradutor
+traduz textos, arquivos e a entrada padrão entre idiomas.
+Usa o Google Translate como motor principal, com fallback automático
+para MyMemory e LibreTranslate. Traduções repetidas são servidas de
+um cache local (SQLite), instantaneamente e sem rede.
+.SH FORMATO DOS IDIOMAS
+.TP
+.B en:pt
+origem inglês, destino português.
+.TP
+.B :pt
+origem detectada automaticamente.
+.TP
+.B pt
+igual a :pt.
+.P
+Códigos ISO 639-1 com variante opcional (pt\-BR, en\-GB).
+.SH OPÇÕES
+.TP
+.BR \-b ", " \-\-brief
+imprime apenas a tradução (ideal para scripts e pipes).
+.TP
+.BI \-o " ARQUIVO"
+grava a tradução no arquivo ARQUIVO.
+.TP
+.B \-\-no\-cache
+não lê nem grava o cache local (texto sensível).
+.TP
+.BI \-\-engine " MOTOR"
+força um motor: google | mymemory | libre (sem fallback).
+.TP
+.BI \-\-history " " [ N ]
+lista as N traduções recentes (padrão 10).
+.TP
+.B \-\-manual
+guia completo no terminal.
+.TP
+.B \-\-help
+ajuda resumida.
+.TP
+.B \-\-version
+mostra a versão.
+.SH EXEMPLOS
+.TP
+.B tradutor en:pt "hello world"
+traduz com origem explícita.
+.TP
+.B tradutor :pt "good morning"
+detecta o idioma e traduz.
+.TP
+.B echo "hi" | tradutor \-b :pt
+pipe com saída limpa.
+.TP
+.B tradutor en:pt manual.txt \-o manual_pt.txt
+traduz um arquivo e grava o resultado.
+.TP
+.B tradutor \-\-no\-cache en:pt "segredo"
+traduz sem gravar nada no cache.
+.SH MOTORES E FALLBACK
+1. google (endpoint do Chrome, com auto\-detect), 2. mymemory (exige
+origem explícita; textos de até 500 caracteres) e 3. libre
+(LibreTranslate, instância pública). Falhas de rede, HTTP 429 ou
+formato inesperado fazem o próximo motor ser tentado automaticamente,
+com aviso no stderr.
+.SH ARQUIVOS
+.TP
+.I ~/.cache/tradutor/cache.db
+cache SQLite das traduções (desligado com \-\-no\-cache).
+.TP
+.I ~/.local/share/man/man1/tradutor.1
+esta man page.
+.SH CÓDIGOS DE SAÍDA
+.TP
+.B 0
+sucesso.
+.TP
+.B 1
+argumentos/texto inválidos ou arquivo inexistente.
+.TP
+.B 2
+todos os motores falharam.
+.TP
+.B 3
+limite de requisições (429) em todos os motores.
+.TP
+.B 4
+falha ao gravar o arquivo de saída (\-o).
+.SH VEJA TAMBÉM
+Guia completo: \fBtradutor \-\-manual\fR. Alternativas: \fBtrans\fR(1),
+\fBargos-translate\fR.

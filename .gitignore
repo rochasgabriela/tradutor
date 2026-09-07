@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+build/
+dist/
+output/
+*.deb
+packaging/keyring.gpg

@@ -1,0 +1,68 @@
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar ferramentas de empacotamento
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apt-utils
+
+      - name: Resolver versão
+        id: ver
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          if [ "$V" = "$GITHUB_REF_NAME" ]; then
+            V="0.0.0-${GITHUB_REF_NAME//\//-}"
+          fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+
+      - name: Build do .deb
+        run: bash packaging/build-deb.sh "${{ steps.ver.outputs.version }}"
+
+      - name: Importar chave de assinatura
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          [ -n "$GPG_PRIVATE_KEY" ] || { echo "erro: secret GPG_PRIVATE_KEY não configurada" >&2; exit 1; }
+          export GNUPGHOME="$(mktemp -d)"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+
+      - name: Build do repositório APT assinado
+        run: bash packaging/build-apt-repo.sh tradutor_*_all.deb apt-root
+
+      - name: Publicar repositório APT no GitHub Pages (gh-pages)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf pages && mkdir pages
+          cp -r apt-root/. pages/
+          cp packaging/keyring.asc pages/key.gpg
+          cp install.sh pages/install.sh
+          cd pages
+          git init -q -b gh-pages
+          git add -A
+          git commit -qm "apt repo ${{ steps.ver.outputs.version }}"
+          git push -qf "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
+
+      - name: Anexar .deb ao GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --generate-notes --title "$GITHUB_REF_NAME" || true
+          gh release upload "$GITHUB_REF_NAME" tradutor_*_all.deb --clobber
