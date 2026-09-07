@@ -59,11 +59,24 @@ tradutor :pt "good morning"               # detecta o idioma de origem
 tradutor pt "the house is big"            # um código só = destino (origem auto)
 echo "hi" | tradutor -b :pt               # pipe com saída limpa
 tradutor en:pt manual.txt -o manual_pt.txt  # traduz arquivo → arquivo
+tradutor :pt man ls                       # traduz man page → ls_tradução.txt
 tradutor --history 5                      # últimas traduções
 ```
 
 Idiomas: códigos ISO 639-1 (`en`, `pt`, `es`, `ja`, ...) com variante opcional (`pt-BR`, `en-GB`).
 Guia completo: `tradutor --manual` ou `man tradutor`.
+
+## Cores
+
+O modo `auto` colore apenas a linha de status, avisos e erros — e **só quando a saída é um
+terminal** (pipes e scripts recebem texto puro, byte a byte). A tradução em si nunca é
+colorida. Controle extra:
+
+```bash
+tradutor --color always en:pt "hi"   # força cor, mesmo em pipe
+tradutor --color never en:pt "hi"    # desliga
+NO_COLOR=1 tradutor en:pt "hi"       # padrão do ambiente, respeitado no modo auto
+```
 
 ## Motores e fallback
 

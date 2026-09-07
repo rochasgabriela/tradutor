@@ -1,5 +1,5 @@
 .\" tradutor.1 — man page do tradutor
-.TH TRADUTOR 1 "2026-09-07" "tradutor 1.0.1" "Manual do usuário"
+.TH TRADUTOR 1 "2026-09-07" "tradutor 1.0.2" "Manual do usuário"
 .SH NOME
 tradutor \- tradutor de idiomas para o terminal
 .SH SINOPSE
@@ -43,6 +43,10 @@ grava a tradução no arquivo ARQUIVO.
 .B \-\-no\-cache
 não lê nem grava o cache local (texto sensível).
 .TP
+.BI \-\-color " MODO"
+cor: auto (só em terminal, padrão), always ou never;
+NO_COLOR desliga no modo auto.
+.TP
 .BI \-\-engine " MOTOR"
 força um motor: google | mymemory | libre (sem fallback).
 .TP
@@ -71,8 +75,18 @@ pipe com saída limpa.
 .B tradutor en:pt manual.txt \-o manual_pt.txt
 traduz um arquivo e grava o resultado.
 .TP
+.B tradutor :pt man ls
+traduz a man page do ls e cria ls_tradução.txt.
+.TP
 .B tradutor \-\-no\-cache en:pt "segredo"
 traduz sem gravar nada no cache.
+.SH PÁGINAS DE MANUAL
+.B tradutor :pt man ls
+traduz a página do comando ls e grava o resultado em
+.I ls_tradução.txt
+no diretório atual; repetir é instantâneo (cache). Para página de
+seção específica (ex.: man 5 crontab), use o pipe:
+.B man 5 crontab | tradutor :pt \-o crontab_tradução.txt.
 .SH MOTORES E FALLBACK
 1. google (endpoint do Chrome, com auto\-detect), 2. mymemory (exige
 origem explícita; textos de até 500 caracteres) e 3. libre

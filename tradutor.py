@@ -10,7 +10,9 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -18,7 +20,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "1.0.1"
+VERSION = "1.0.2"
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -50,6 +52,35 @@ def valid_lang(code):
 
 
 ARROW = "\u2192"
+
+ANSI_RESET = "\033[0m"
+ANSI_BLUE = "\033[34;1m"
+ANSI_GREEN = "\033[32m"
+ANSI_YELLOW = "\033[33m"
+ANSI_RED = "\033[31;1m"
+ANSI_DIM = "\033[90m"
+_COL_OUT = False
+_COL_ERR = False
+
+
+def _paint(code, s):
+    if not s:
+        return s
+    return f"{code}{s}{ANSI_RESET}" if _COL_OUT else s
+
+
+def _paint_err(code, s):
+    if not s:
+        return s
+    return f"{code}{s}{ANSI_RESET}" if _COL_ERR else s
+
+
+def _resolve_color(mode, is_tty):
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    return is_tty and "NO_COLOR" not in os.environ
 
 
 class UsageError(Exception):
@@ -164,15 +195,15 @@ def translate_chunk(text, sl, tl, forced):
             if forced:
                 raise UsageError(f"motor {name}: {e}")
             errors.append(f"{name} pulado ({e})")
-            print(f"tradutor: aviso: {name} pulado ({e})", file=sys.stderr)
+            print(_paint_err(ANSI_YELLOW, f"tradutor: aviso: {name} pulado ({e})"), file=sys.stderr)
         except RateLimit as e:
             errors.append(f"{name} com limite de requisições ({e})")
-            print(f"tradutor: aviso: {name}: {e}", file=sys.stderr)
+            print(_paint_err(ANSI_YELLOW, f"tradutor: aviso: {name}: {e}"), file=sys.stderr)
         except Exception as e:
             detail = str(e) if isinstance(e, EngineError) else f"{e.__class__.__name__}: {e}"
             errors.append(f"{name} falhou ({detail})")
             hard_fail = True
-            print(f"tradutor: aviso: {name} falhou ({detail})", file=sys.stderr)
+            print(_paint_err(ANSI_YELLOW, f"tradutor: aviso: {name} falhou ({detail})"), file=sys.stderr)
     raise AllEnginesFailed(errors, all_rate=not hard_fail)
 
 
@@ -235,7 +266,7 @@ def open_db():
         )
         return conn
     except sqlite3.Error as e:
-        print(f"tradutor: aviso: cache indisponível ({e})", file=sys.stderr)
+        print(_paint_err(ANSI_YELLOW, f"tradutor: aviso: cache indisponível ({e})"), file=sys.stderr)
         return None
 
 
@@ -264,7 +295,7 @@ def cache_put(conn, key, engine, sl, tl, text, translation, detected):
         )
         conn.commit()
     except sqlite3.Error as e:
-        print(f"tradutor: aviso: falha ao gravar cache ({e})", file=sys.stderr)
+        print(_paint_err(ANSI_YELLOW, f"tradutor: aviso: falha ao gravar cache ({e})"), file=sys.stderr)
 
 
 def translate_text(text, sl, tl, forced, use_cache):
@@ -346,6 +377,39 @@ def _trunc(s, n):
     return s if len(s) <= n else s[: n - 1] + "…"
 
 
+def _strip_overstrike(s):
+    if shutil.which("col"):
+        try:
+            out = subprocess.run(["col", "-b"], input=s, capture_output=True, text=True, timeout=10)
+            if out.returncode == 0:
+                return out.stdout
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+    prev = None
+    while prev != s:
+        prev = s
+        s = re.sub(r".\x08", "", s)
+    return s
+
+
+def fetch_man_page(page):
+    if shutil.which("man") is None:
+        raise UsageError("comando 'man' não encontrado; instale o pacote man-db")
+    try:
+        out = subprocess.run(["man", "--", page], capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired:
+        raise UsageError(f"tempo esgotado ao abrir a man page de {page}")
+    except OSError as e:
+        raise UsageError(f"não foi possível executar man: {e}")
+    if out.returncode != 0:
+        hint = out.stderr.strip().splitlines()[-1] if out.stderr.strip() else f"código {out.returncode}"
+        raise UsageError(f"man page de '{page}' indisponível ({hint})")
+    text = _strip_overstrike(out.stdout)
+    if not text.strip():
+        raise UsageError(f"man page de '{page}' está vazia")
+    return text
+
+
 def print_history(n):
     conn = open_db()
     if conn is None:
@@ -363,7 +427,10 @@ def print_history(n):
         print("nenhuma tradução no cache ainda")
         return 0
     for created, sl, tl, engine, text, translation in rows:
-        print(f"{created}  {sl}{ARROW}{tl}  [{engine}]  {_trunc(text, 40)} {ARROW} {_trunc(translation, 60)}")
+        print(
+            _paint(ANSI_DIM, f"{created}  {sl}{ARROW}{tl}")
+            + f"  {_paint(ANSI_BLUE, f'[{engine}]')}  {_trunc(text, 40)} {ARROW} {_trunc(translation, 60)}"
+        )
     return 0
 
 
@@ -385,6 +452,7 @@ def build_parser():
             "  tradutor :pt \"good morning\"            auto-detecta o idioma de origem\n"
             "  echo \"hi\" | tradutor -b :pt            pipe com saída limpa (só a tradução)\n"
             "  tradutor en:pt manual.txt -o m_pt.txt  traduz arquivo e grava o resultado\n"
+            "  tradutor :pt man ls                    traduz man page → ls_tradução.txt\n"
             "  tradutor --no-cache en:pt \"segredo\"    não grava nada no cache local\n"
             "  tradutor --history 5                   lista as 5 traduções recentes\n"
             "\n"
@@ -409,6 +477,12 @@ def build_parser():
         help="força um motor específico (sem fallback)",
     )
     parser.add_argument("--no-cache", action="store_true", help="não lê nem grava o cache local")
+    parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="cor: auto (só em terminal), always ou never (NO_COLOR desliga no auto)",
+    )
     parser.add_argument("--history", nargs="?", const=10, type=int, metavar="N", help="lista as N traduções recentes (padrão: 10)")
     parser.add_argument("--manual", action="store_true", help="guia completo no terminal")
     parser.add_argument("--version", action="version", version=f"tradutor {VERSION}", help="mostra a versão e sai")
@@ -421,6 +495,7 @@ exemplos rápidos:
   tradutor en:pt "hello world"             inglês → português
   tradutor :pt "good morning"              detecta o idioma e traduz
   tradutor en:pt doc.txt -o doc_pt.txt     traduz um arquivo
+  tradutor :pt man ls                      traduz man page → ls_tradução.txt
 
   tradutor --help      todas as opções
   tradutor --manual    guia completo
@@ -457,6 +532,7 @@ EXEMPLOS
     echo "the house is big" | tradutor -b :pt
     tradutor pt:en < carta.txt
     tradutor en:pt manual.txt -o manual_pt.txt
+    tradutor :pt man ls
     tradutor --engine libre :pt "bonjour"
     tradutor --history 5
 
@@ -464,6 +540,7 @@ OPÇÕES
     -b, --brief          imprime apenas a tradução (ideal para scripts)
     -o, --output ARQ     grava a tradução no arquivo ARQ
     --no-cache           não lê nem grava o cache (texto sensível)
+    --color MODO         cor: auto (só em terminal), always ou never
     --engine MOTOR       força um motor: google | mymemory | libre
     --history [N]        lista as N traduções recentes (padrão 10)
     --manual             mostra este guia
@@ -485,6 +562,20 @@ TEXTOS LONGOS E ARQUIVOS
         tradutor en:pt entrada.txt -o saida.txt
     Também funciona com redirecionamento:
         tradutor :pt < entrada.txt > saida.txt
+
+PÁGINAS DE MANUAL
+    tradutor :pt man ls
+        Traduz a man page do ls e cria o arquivo ls_tradução.txt no
+        diretório atual (rerun = instantâneo, via cache).
+    Para página de seção específica (ex.: man 5 crontab), use o pipe:
+        man 5 crontab | tradutor :pt -o crontab_tradução.txt
+
+CORES
+    Por padrão (auto) só há cor quando a saída é um terminal: pipes e
+    scripts recebem texto puro, byte a byte. --color always força cor,
+    --color never desliga; a variável NO_COLOR=1 também desliga no
+    modo auto. A tradução em si nunca é colorida — apenas a linha de
+    status, avisos e erros.
 
 CACHE E HISTÓRICO
     Cache: ~/.cache/tradutor/cache.db (SQLite). Cada tradução é
@@ -525,62 +616,83 @@ VEJA TAMBÉM
 
 
 def main(argv):
+    global _COL_OUT, _COL_ERR
     args = build_parser().parse_args(argv)
-    if args.manual:
-        print(MANUAL, end="")
-        return 0
-    if args.history is not None:
-        return print_history(args.history)
-    if args.langs is None:
-        print(QUICK_HELP, end="")
-        return 0
-    sl, tl = parse_langs(args.langs)
-    text = resolve_text(args)
-    if not text.strip():
-        raise UsageError("texto vazio: forneça um texto, um arquivo ou a entrada via pipe")
-    if args.engine == "mymemory" and sl == "auto":
-        raise UsageError("MyMemory exige idioma de origem explícito (ex.: en:pt)")
+    _COL_OUT = _resolve_color(args.color, sys.stdout.isatty())
+    _COL_ERR = _resolve_color(args.color, sys.stderr.isatty())
     try:
-        translation, primary, detected, hits, total = translate_text(text, sl, tl, args.engine, not args.no_cache)
-    except AllEnginesFailed as e:
-        print(
-            f"tradutor: erro: todos os motores falharam ({'; '.join(e.errors)}). "
-            "Verifique a conexão ou tente --engine mymemory/libre.",
-            file=sys.stderr,
-        )
-        return 3 if e.all_rate else 2
-    if args.output:
+        if args.manual:
+            print(MANUAL, end="")
+            return 0
+        if args.history is not None:
+            return print_history(args.history)
+        if args.langs is None:
+            print(QUICK_HELP, end="")
+            return 0
+        man_page = None
+        if args.text and len(args.text) >= 2 and args.text[0] == "man":
+            man_page = args.text[1]
+            args.text = args.text[2:] or None
+        sl, tl = parse_langs(args.langs)
+        if man_page:
+            text = fetch_man_page(man_page)
+            print(
+                _paint_err(ANSI_YELLOW, f"tradutor: aviso: traduzindo man page: {man_page} (pode levar alguns segundos)"),
+                file=sys.stderr,
+            )
+        else:
+            text = resolve_text(args)
+        if not text.strip():
+            raise UsageError("texto vazio: forneça um texto, um arquivo ou a entrada via pipe")
+        if args.engine == "mymemory" and sl == "auto":
+            raise UsageError("MyMemory exige idioma de origem explícito (ex.: en:pt)")
         try:
-            Path(args.output).write_text(translation, encoding="utf-8")
-        except OSError as e:
-            print(f"tradutor: erro: não foi possível gravar {args.output}: {e}", file=sys.stderr)
-            return 4
-        line = f"[{primary}] {sl} {ARROW} {tl}"
-        if sl == "auto" and detected:
-            line += f" (detectado: {detected})"
-        line += f" ({_plural_blocos(total)}, gravado em {args.output})"
-        print(line)
-    elif args.brief:
-        print(translation)
-    else:
-        print(translation)
-        line = f"[{primary}] {sl} {ARROW} {tl}"
-        if sl == "auto" and detected:
-            line += f" (detectado: {detected})"
-        if total > 1:
-            line += f" ({_plural_blocos(total)})"
-        if hits == total:
-            line += " (em cache)"
-        print(line)
-    return 0
+            translation, primary, detected, hits, total = translate_text(text, sl, tl, args.engine, not args.no_cache)
+        except AllEnginesFailed as e:
+            print(
+                _paint_err(ANSI_RED, f"tradutor: erro: todos os motores falharam ({'; '.join(e.errors)}).")
+                + " Verifique a conexão ou tente --engine mymemory/libre.",
+                file=sys.stderr,
+            )
+            return 3 if e.all_rate else 2
+        if man_page and not args.output and not args.brief:
+            args.output = f"{man_page}_tradução.txt"
+        if args.output:
+            try:
+                Path(args.output).write_text(translation, encoding="utf-8")
+            except OSError as e:
+                print(_paint_err(ANSI_RED, f"tradutor: erro: não foi possível gravar {args.output}: {e}"), file=sys.stderr)
+                return 4
+            line = f"[{_paint(ANSI_BLUE, primary)}] {_paint(ANSI_DIM, f'{sl} {ARROW} {tl}')}"
+            if sl == "auto" and detected:
+                line += _paint(ANSI_DIM, f" (detectado: {detected})")
+            if man_page:
+                line += _paint(ANSI_DIM, f" (man: {man_page})")
+            line += _paint(ANSI_DIM, f" ({_plural_blocos(total)}, gravado em {args.output})")
+            print(line)
+        elif args.brief:
+            print(translation)
+        else:
+            print(translation)
+            line = f"[{_paint(ANSI_BLUE, primary)}] {_paint(ANSI_DIM, f'{sl} {ARROW} {tl}')}"
+            if sl == "auto" and detected:
+                line += _paint(ANSI_DIM, f" (detectado: {detected})")
+            if man_page:
+                line += _paint(ANSI_DIM, f" (man: {man_page})")
+            if total > 1:
+                line += _paint(ANSI_DIM, f" ({_plural_blocos(total)})")
+            if hits == total:
+                line += _paint(ANSI_GREEN, " (em cache)")
+            print(line)
+        return 0
+    except UsageError as e:
+        print(_paint_err(ANSI_RED, f"tradutor: erro: {e}"), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv[1:]))
-    except UsageError as e:
-        print(f"tradutor: erro: {e}", file=sys.stderr)
-        sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(130)
     except BrokenPipeError:

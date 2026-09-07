@@ -28,6 +28,21 @@ jobs:
           fi
           echo "version=$V" >> "$GITHUB_OUTPUT"
 
+      - name: Conferir versão
+        run: |
+          CODE_V="$(python3 -c "import re; m=re.search(r'^VERSION = \"([^\"]+)\"', open('tradutor.py').read(), re.M); print(m.group(1) if m else '')")"
+          [ -n "$CODE_V" ] || { echo "erro: VERSION não encontrada em tradutor.py" >&2; exit 1; }
+          MAN_V="$(grep -o 'tradutor [0-9][0-9.]*' tradutor.1 | head -1 | cut -d' ' -f2)"
+          [ -n "$MAN_V" ] || { echo "erro: versão não encontrada no .TH de tradutor.1" >&2; exit 1; }
+          echo "tag: ${GITHUB_REF_NAME#v} | code: $CODE_V | man: $MAN_V"
+          case "$GITHUB_REF_NAME" in
+            v*)
+              TAG_V="${GITHUB_REF_NAME#v}"
+              [ "$CODE_V" = "$TAG_V" ] || { echo "erro: tag v$TAG_V ≠ VERSION em tradutor.py ($CODE_V) — faça o bump antes de publicar" >&2; exit 1; }
+              [ "$MAN_V" = "$CODE_V" ] || { echo "erro: man page ($MAN_V) ≠ VERSION ($CODE_V) — sincronize tradutor.1" >&2; exit 1; }
+              ;;
+          esac
+
       - name: Build do .deb
         run: bash packaging/build-deb.sh "${{ steps.ver.outputs.version }}"
 
