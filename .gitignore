@@ -5,3 +5,4 @@ dist/
 output/
 *.deb
 packaging/keyring.gpg
+.kilo/

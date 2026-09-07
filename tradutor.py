@@ -18,7 +18,7 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "1.0"
+VERSION = "1.0.1"
 USER_AGENT = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -47,6 +47,8 @@ ISO_639_1 = frozenset(
 def valid_lang(code):
     base, _, variant = code.partition("-")
     return base in ISO_639_1 and (not variant or re.match(r"^[a-z0-9]{2,4}$", variant))
+
+
 ARROW = "\u2192"
 
 
@@ -166,8 +168,8 @@ def translate_chunk(text, sl, tl, forced):
         except RateLimit as e:
             errors.append(f"{name} com limite de requisições ({e})")
             print(f"tradutor: aviso: {name}: {e}", file=sys.stderr)
-        except (EngineError, Exception) as e:
-            detail = f"{e.__class__.__name__}: {e}" if not isinstance(e, EngineError) else str(e)
+        except Exception as e:
+            detail = str(e) if isinstance(e, EngineError) else f"{e.__class__.__name__}: {e}"
             errors.append(f"{name} falhou ({detail})")
             hard_fail = True
             print(f"tradutor: aviso: {name} falhou ({detail})", file=sys.stderr)
@@ -267,32 +269,34 @@ def cache_put(conn, key, engine, sl, tl, text, translation, detected):
 
 def translate_text(text, sl, tl, forced, use_cache):
     conn = open_db() if use_cache else None
-    chunks = make_chunks(text, CHUNK_MAX[forced] if forced else CHUNK_MAX["google"])
-    parts, detected, hits, primary = [], None, 0, None
-    for chunk in chunks:
-        result = None
-        if conn is not None:
-            for name in ((forced,) if forced else ENGINE_ORDER):
-                row = cache_get(conn, cache_key(name, sl, tl, chunk))
-                if row:
-                    result = (row[0], row[1], row[2], True)
-                    break
-        if result is None:
-            name, translation, det = translate_chunk(chunk, sl, tl, forced)
+    try:
+        chunks = make_chunks(text, CHUNK_MAX[forced] if forced else CHUNK_MAX["google"])
+        parts, detected, hits, primary = [], None, 0, None
+        for chunk in chunks:
+            result = None
             if conn is not None:
-                cache_put(conn, cache_key(name, sl, tl, chunk), name, sl, tl, chunk, translation, det)
-            result = (name, translation, det, False)
-        name, translation, det, hit = result
-        if primary is None:
-            primary = name
-        parts.append(translation)
-        if hit:
-            hits += 1
-        if detected is None and det:
-            detected = det
-    if conn is not None:
-        conn.close()
-    return "\n\n".join(parts), primary, detected, hits, len(chunks)
+                for name in ((forced,) if forced else ENGINE_ORDER):
+                    row = cache_get(conn, cache_key(name, sl, tl, chunk))
+                    if row:
+                        result = (row[0], row[1], row[2], True)
+                        break
+            if result is None:
+                name, translation, det = translate_chunk(chunk, sl, tl, forced)
+                if conn is not None:
+                    cache_put(conn, cache_key(name, sl, tl, chunk), name, sl, tl, chunk, translation, det)
+                result = (name, translation, det, False)
+            name, translation, det, hit = result
+            if primary is None:
+                primary = name
+            parts.append(translation)
+            if hit:
+                hits += 1
+            if detected is None and det:
+                detected = det
+        return "\n\n".join(parts), primary, detected, hits, len(chunks)
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def parse_langs(raw):

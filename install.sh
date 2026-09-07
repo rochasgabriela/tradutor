@@ -39,10 +39,11 @@ as_root() {
 install_apt() {
     say "configurando repositório APT: $PAGES"
     as_root mkdir -p /usr/share/keyrings /etc/apt/sources.list.d
-    curl -fsSL "$PAGES/key.gpg" -o /tmp/tradutor-key.asc
+    KEYTMP="$(mktemp)"
+    trap 'rm -f "$KEYTMP"' EXIT
+    curl -fsSL "$PAGES/key.gpg" -o "$KEYTMP"
     as_root rm -f "$KEYRING"
-    as_root gpg --dearmor -o "$KEYRING" /tmp/tradutor-key.asc
-    rm -f /tmp/tradutor-key.asc
+    as_root gpg --dearmor -o "$KEYRING" "$KEYTMP"
 
     as_root tee "$SOURCES" >/dev/null <<EOF
 Types: deb
