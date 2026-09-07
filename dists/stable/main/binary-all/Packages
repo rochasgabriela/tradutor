@@ -1,0 +1,23 @@
+Package: tradutor
+Architecture: all
+Version: 1.0.2
+Priority: optional
+Section: utils
+Maintainer: rochasgabriela <gslogger00@gmail.com>
+Installed-Size: 64
+Depends: python3 (>= 3.7)
+Filename: pool/main/t/tradutor/tradutor_1.0.2_all.deb
+Size: 11800
+MD5sum: 80a68f1dd08510776fc239a1a760e3a0
+SHA1: 08972a3e609b58f9f08c2306fa369b229c869520
+SHA256: 7949fb9992cf978405ef14f73eb23faea45e40dba658965df9a77928b4b4ceb8
+SHA512: ca17803d13b9ec5e5c5a49a7e595dbbc0aa524fec28f47769b5af6ac83c198082daabdbeada98819a681bdfa7e7fdcf6d9d32573ad252fd2a18a8d1bec1eee71
+Homepage: https://github.com/rochasgabriela/tradutor
+Description: tradutor de idiomas para o terminal
+ Traduz textos, arquivos e a entrada padrão entre idiomas direto do
+ terminal, com fallback automático entre Google, MyMemory e
+ LibreTranslate e cache local instantâneo (SQLite).
+ .
+ Motores e fallback automáticos garantem tradução mesmo quando um
+ serviço falha; --no-cache permite uso sem gravar nada em disco.
+
